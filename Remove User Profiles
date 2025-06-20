@@ -1,6 +1,7 @@
 # This script will remove user profiles from the windows registery and any/all data associated with it.
 
-# Get all user profiles excluding any special/system profiles
+# Get all user profiles excluding admin or special accounts
+Write-Host "Starting Removal Of User Profiles" -ForegroundColor Cyan
 $profiles = Get-CimInstance -ClassName Win32_UserProfile | Where-Object {
     -not $_.Special -and 
     $_.LocalPath -ne $null
@@ -9,25 +10,19 @@ $profiles = Get-CimInstance -ClassName Win32_UserProfile | Where-Object {
 foreach ($profile in $profiles) {
     $username = Split-Path $profile.LocalPath -Leaf
 
-    # Skip profiles: Built-in Administrator, contains "AAA" or "BBB", or system accounts. (I used "AAA" that contains part of an admin for local IT technicians)
-    if ($username -eq "Administrator" -or $username -match "AAA" -or $username -match "BBB" -or 
+    # Skip profiles: Built-in Administrator, contains "AAA", or system/special accounts
+    if ($username -eq "Administrator" -or $username -match "AAA" -or $username -match "BBB" -or
         $username -match "^(Default|Public|LocalService|NetworkService|All Users)$") {
+        Write-Host "Skipping profile: $username" -ForegroundColor DarkGray
         continue
     }
 
     try {
-        # Ensure the profile is not in use
-        if ($profile.Loaded) {
-            continue  # Skip active profiles (should not be loaded at startup)
-        }
-
-        # Remove profile directory manually
-        Remove-Item -Path $profile.LocalPath -Recurse -Force -ErrorAction Stop
-
-        # Remove profile from Windows registry
-        $profile | Remove-CimInstance -ErrorAction Stop
-
+        # Remove profile
+        $profile | Remove-CimInstance
+        Write-Host "Deleted profile: $username" -ForegroundColor Green
     } catch {
-        # Suppress errors to prevent GPO failures
+        Write-Host "Failed to delete profile: $username. Error: $_" -ForegroundColor Red
     }
 }
+Write-Host "Removing User Profiles Complete!" -ForegroundColor Cyan
