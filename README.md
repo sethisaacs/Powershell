@@ -1,1 +1,1 @@
-Collection of powershell scripts written for work
+Collection of my powershell scripts
