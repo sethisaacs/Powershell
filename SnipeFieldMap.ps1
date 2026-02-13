@@ -3,4 +3,5 @@
 # Replace c:\path\to\file with save location
 
 
-Invoke-RestMethod -Url "SNIPEURL/api/v1/fields" -Method Get -Headers @{"Authorization" = "Bearer TOKEN"; "Accept" = "application/json"} | Select-Object -ExpandProperty rows | Select-Object name, db_column_name | Export-Csv -Path "c:\path\to\file" -NoTypeInformation
+Invoke-RestMethod -Uri "SNIPEURL/api/v1/fields" -Method Get -Headers @{"Authorization" = "Bearer TOKEN"; "Accept" = "application/json"} | Select-Object -ExpandProperty rows | Select-Object name, db_column_name | Export-Csv -Path "c:\path\to\file" -NoTypeInformation
+
