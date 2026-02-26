@@ -1,0 +1,50 @@
+Import-Module ActiveDirectory
+
+# 1. SET YOUR OU AND EXPORT PATH HERE
+$TargetOU = "OU=YourTargetOU,DC=yourdomain,DC=com" 
+$ExportPath = "C:\temp\OU_User_Groups.csv"
+
+Write-Host "Fetching users from $TargetOU... (This may take a minute or two)" -ForegroundColor Cyan
+
+# Grab the users (We don't need the MemberOf property here anymore)
+$Users = Get-ADUser -Filter * -SearchBase $TargetOU -Properties DisplayName
+
+$Results = foreach ($User in $Users) {
+    
+    $GroupList = @()
+    
+    # Use the token-calculation method that we just proved works
+    try {
+        $UserGroups = Get-ADPrincipalGroupMembership -Identity $User.SamAccountName -ErrorAction Stop
+        
+        foreach ($Group in $UserGroups) {
+            $GroupList += $Group.Name
+        }
+    } catch {
+        # Safety net: If an account is corrupted or disabled, it won't crash the script
+        Write-Warning "Could not fetch groups for $($User.SamAccountName)"
+        $GroupList += "ERROR READING GROUPS"
+    }
+
+    # Join the groups together separated by a semicolon
+    $GroupString = $GroupList -join "; "
+
+    # Output the custom object for our report
+    [PSCustomObject]@{
+        SamAccountName = $User.SamAccountName
+        DisplayName    = $User.DisplayName
+        GroupCount     = $GroupList.Count
+        MemberOf       = $GroupString
+    }
+}
+
+# 4. EXPORT AND DISPLAY
+if ($Results) {
+    # Display a preview in the console
+    $Results | Select-Object -First 10 | Format-Table -AutoSize
+    
+    # Export to CSV
+    $Results | Export-Csv -Path $ExportPath -NoTypeInformation -Encoding UTF8
+
+    Write-Host "Success! Found $($Results.Count) users. Report saved to $ExportPath" -ForegroundColor Green
+}
