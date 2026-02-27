@@ -1,0 +1,62 @@
+# 1. Force TLS 1.2 for the API connection
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# 2. Set your Okta configuration
+$oktaDomain = "https://COMPANY.okta.com"
+$apiToken = "APITOKEN"
+
+# 3. Setup the authorization headers for the direct API call
+$headers = @{
+    "Authorization" = "SSWS $apiToken"
+    "Accept"        = "application/json"
+    "Content-Type"  = "application/json"
+}
+
+# 4. Import your CSV (W/ Header 'EmployeeID')
+$csvData = Import-Csv "C:\path\to\import\csv"
+$results = @()
+
+foreach ($row in $csvData) {
+    $empNum = $row.EmployeeID
+    
+    # URL encode the search query so it passes safely over the web
+    $searchQuery = "profile.employeeNumber eq `"$empNum`""
+    $encodedSearch = [uri]::EscapeDataString($searchQuery)
+    
+    # Build the exact Okta API endpoint URL
+    $apiUrl = "$oktaDomain/api/v1/users?search=$encodedSearch"
+
+    try {
+        # Bypass the Okta.PS module and make the API call directly
+        $oktaResponse = Invoke-RestMethod -Method Get -Uri $apiUrl -Headers $headers
+        
+        # If the API returns data, the user was found
+        if ($oktaResponse) {
+            $status = "Found"
+            # Since search returns an array, we grab the first result's login
+            $login = $oktaResponse[0].profile.login
+        } else {
+            $status = "Not Found"
+            $login = "N/A"
+        }
+
+        $results += [PSCustomObject]@{
+            EmployeeNumber = $empNum
+            AccountStatus  = $status
+            OktaLogin      = $login
+        }
+    }
+    catch {
+        # If there's a timeout or rate limit error, it logs it and keeps going
+        Write-Warning "Could not search for Employee Number $empNum : $_"
+        $results += [PSCustomObject]@{
+            EmployeeNumber = $empNum
+            AccountStatus  = "Error"
+            OktaLogin      = "Error"
+        }
+    }
+}
+
+# 5. Export the final results
+$results | Export-Csv "C:\path\to\export\csv" -NoTypeInformation
+Write-Host "Audit complete! Check your CSV for the results." -ForegroundColor Green
