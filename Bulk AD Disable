@@ -1,0 +1,27 @@
+# Disable User accounts via csv of samaccountname
+# Create task to trigger at end of business
+
+# Import the Active Directory module required for AD commands
+Import-Module ActiveDirectory
+
+# Define the path to your CSV file
+$csvPath = "C:\path\to\users.csv"
+
+# Import the CSV data
+$users = Import-Csv -Path $csvPath
+
+# Loop through each row in the CSV
+foreach ($user in $users) {
+    # Extract the sAMAccountName from the current row
+    $account = $user.sAMAccountName
+    
+    try {
+        # Attempt to disable the account
+        Disable-ADAccount -Identity $account
+        Write-Output "Successfully disabled account: $account"
+    }
+    catch {
+        # If it fails (e.g., user doesn't exist), output an error
+        Write-Warning "Failed to disable account: $account. Error: $($_.Exception.Message)"
+    }
+}
