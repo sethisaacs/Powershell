@@ -1,0 +1,54 @@
+# This script will bulk deactivate Okta accounts, by of their employeeNumber from a csv
+# Create task to run at end of business
+# Don't forget to delete your API token from Okta admin once completed!
+
+# --- Configuration Variables ---
+$oktaDomain = "yourdomain.okta.com" 
+$apiToken = "TOKEN"
+$csvPath = "C:\Path\To\CSV.csv"
+
+# Set up the authentication headers required by Okta
+$headers = @{
+    "Authorization" = "SSWS $apiToken"
+    "Accept"        = "application/json"
+    "Content-Type"  = "application/json"
+}
+
+# Import the CSV data
+$users = Import-Csv -Path $csvPath
+
+foreach ($user in $users) {
+    # Extract the EmployeeID from the CSV row
+    $empId = $user.EmployeeID 
+    
+    # Skip empty rows
+    if ([string]::IsNullOrWhiteSpace($empId)) { continue }
+
+    try {
+        # 1. Search Okta for the user by Employee ID
+        # NOTE: employeeNumber is Okta's standard profile attribute for Employee ID. 
+        # If you use a custom attribute, change 'employeeNumber' to your custom variable name.
+        $searchUrl = "https://$oktaDomain/api/v1/users?search=profile.employeeNumber eq `"$empId`""
+        
+        $searchResponse = Invoke-RestMethod -Uri $searchUrl -Method Get -Headers $headers
+        
+        # Check if the user was found
+        if ($searchResponse.Count -eq 0) {
+            Write-Warning "Could not find an Okta account matching Employee ID: $empId"
+            continue
+        }
+
+        # Grab the Okta User ID and login email from the search results
+        $oktaUserId = $searchResponse[0].id
+        $oktaUserLogin = $searchResponse[0].profile.login
+
+        # 2. Deactivate the account via Okta's Lifecycle API
+        $deactivateUrl = "https://$oktaDomain/api/v1/users/$oktaUserId/lifecycle/deactivate"
+        Invoke-RestMethod -Uri $deactivateUrl -Method Post -Headers $headers
+        
+        Write-Output "Successfully deactivated Okta account: $oktaUserLogin (Employee ID: $empId)"
+    }
+    catch {
+        Write-Warning "Failed to process Employee ID $empId. Error: $($_.Exception.Message)"
+    }
+}
