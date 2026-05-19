@@ -1,0 +1,57 @@
+# This script automates ManageEngines Self Service Password Reset tool user enrollment. This has a custom attribute for a creating a user using a defined template in ADManager, then cupdates the CSV of all useres created that day. This is then scheduled to upload to SSPR at 11:30pm.
+# This script is needed as a custom attribute for ManageEngine's ADManader user creation template. You will need to create a custom attribute for 'otherMailbox' in ADManger for your respective template.
+# the 'otherMailbox' attribute is the users personal email address, supplied by HR during onboarding. This attribute name does not sync with SSPR and we user 'mail' within SSPR.
+
+
+
+### Part 1 ###
+
+# ADManager user creation template custom attirbute script
+powershell.exe -ExecutionPolicy Bypass -File "Path\To\ManageEngine\ADManager_Plus\Scripts\SSPR_Enrollment_Queue.ps1" %sAMAccountName% %otherMailbox%
+
+
+
+#### Part 2 ###
+
+# This report will update daily when users are created and overwrite the following morning, when the first user is created.
+# Place this script in Path\To\ManageEngine\ADManager_Plus\Scripts\SSPR_Enrollment_Template.ps1
+param(
+    [string]$userName,
+    [string]$mail
+)
+
+$scriptFolder = "Path\To\ManageEngine\ADManager_Plus\Scripts"
+$csvPath = "$scriptFolder\SSPR_Ready.csv"
+$logPath = "$scriptFolder\EnrollLog.txt"
+
+# Log what ADManager passed to the script
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+"[$timestamp] Script started for User: '$userName' | Email provided: '$mail'" | Out-File $logPath -Append -Encoding UTF8
+
+# Ensure folder exists
+if (!(Test-Path $scriptFolder)) { New-Item -ItemType Directory -Path $scriptFolder }
+
+# Create CSV headers if missing
+if (!(Test-Path $csvPath)) {
+    "sAMAccountName,mail" | Out-File $csvPath -Encoding UTF8
+    "[$timestamp] Created new CSV file." | Out-File $logPath -Append -Encoding UTF8
+}
+
+# Append to CSV if the email is not blank
+if ($mail -ne "") {
+    "$userName,$mail" | Out-File $csvPath -Append -Encoding UTF8
+    "[$timestamp] SUCCESS - Wrote $userName to CSV." | Out-File $logPath -Append -Encoding UTF8
+} else {
+    "[$timestamp] ERROR - The email variable was blank. User not added to CSV." | Out-File $logPath -Append -Encoding UTF8
+}
+
+
+
+### Part 3 ###
+
+# SSPR User import Schedule
+# Do not overwrite data of users that already exist
+In ADSelfService Plus, go to Configuration > Administrative Tools > Quick Enrollment.
+Click on Schedule Import.
+Point the file path to Path\To\ManageEngine\ADManager_Plus\Scripts\SSPR_Ready.csv.
+Set the schedule
