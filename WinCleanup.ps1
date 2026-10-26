@@ -1,3 +1,5 @@
+# Windows cleanup for Win10 to Win11 client migration
+
 # --- Clear Windows Update Cache ---
 Write-Host "Stopping Windows Update services..." -ForegroundColor Yellow
 Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
