@@ -1,0 +1,43 @@
+@echo off
+color 0A
+title My System Information
+
+echo ==============================================================
+echo                   SYSTEM ^& HARDWARE
+echo ==============================================================
+REM Display client hostname
+echo HOSTNAME:       %COMPUTERNAME%
+REM Display current signed-in user
+echo CURRENT USER:   %USERDOMAIN%\%USERNAME%
+REM BIOS serial number
+powershell -NoProfile -Command "$bios=Get-CimInstance Win32_BIOS; Write-Host ('SERIAL NUMBER:  ' + $bios.SerialNumber.Trim())"
+REM Machine uptime since last restart
+powershell -NoProfile -Command "$os=Get-CimInstance Win32_OperatingSystem; $u=(Get-Date)-$os.LastBootUpTime; Write-Host ('UPTIME:         ' + $u.Days + ' Days, ' + $u.Hours + ' Hours')"
+REM C: Drive Used / Total Space
+powershell -NoProfile -Command "$vol = Get-Volume -DriveLetter C -ErrorAction SilentlyContinue; if($vol){ Write-Host ('C: DRIVE:       ' + [math]::Round($vol.SizeRemaining/1GB, 2) + ' GB Free / ' + [math]::Round($vol.Size/1GB, 2) + ' GB Total') }"
+REM RAM Used / Total avail
+powershell -NoProfile -Command "$os=Get-CimInstance Win32_OperatingSystem; $total=[math]::Round($os.TotalVisibleMemorySize/1MB, 2); $free=[math]::Round($os.FreePhysicalMemory/1MB, 2); $used=[math]::Round($total-$free, 2); Write-Host ('RAM (MEMORY):   ' + $used + ' GB In Use / ' + $total + ' GB Total')"
+echo.
+
+echo ==============================================================
+echo                   NETWORK ^& VPN
+echo ==============================================================
+echo IP ADDRESS(ES):
+REM IPv4 address
+ipconfig | findstr IPv4
+echo.
+REM Hardwired or wi-fi connection
+powershell -NoProfile -Command "$adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface -eq $true }; if (-not $adapters) { Write-Host 'No active physical network connection found.' } else { $adapters | ForEach-Object { if ($_.MediaType -like '*802.11*' -or $_.PhysicalMediaType -like '*802.11*') { $ssid = (netsh wlan show interfaces | Select-String '^\s*SSID\s*:' | ForEach-Object { $_.ToString().Split(':',2)[1].Trim() }); if (-not $ssid) { $ssid = 'Not Connected' }; [PSCustomObject]@{ 'Connection' = 'Wi-Fi'; 'SSID' = $ssid; 'Adapter' = $_.InterfaceDescription } } else { [PSCustomObject]@{ 'Connection' = 'Wired'; 'SSID' = 'N/A'; 'Adapter' = $_.InterfaceDescription } } } | Format-Table -AutoSize }"
+REM Client on VPN, yes / no
+powershell -NoProfile -Command "$vpn = Get-VpnConnection -AllUserConnection -ErrorAction SilentlyContinue | Where-Object { $_.ConnectionStatus -eq 'Connected' }; if (-not $vpn) { $vpn = Get-VpnConnection -ErrorAction SilentlyContinue | Where-Object { $_.ConnectionStatus -eq 'Connected' } }; $3rd = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -match 'VPN|Cisco|GlobalProtect|Palo Alto|Fortinet|TAP-|WireGuard|SonicWall|Pulse|OpenVPN' }; if ($vpn) { [PSCustomObject]@{ 'VPN Status' = 'Connected'; 'Adapter' = $vpn.Name[0] } | Format-Table -AutoSize } elseif ($3rd) { $name = ($3rd | Select-Object -ExpandProperty InterfaceDescription) -join ', '; [PSCustomObject]@{ 'VPN Status' = 'Connected'; 'Adapter' = $name } | Format-Table -AutoSize } else { [PSCustomObject]@{ 'VPN Status' = 'Not Connected'; 'Adapter' = 'N/A' } | Format-Table -AutoSize }"
+
+echo ==============================================================
+echo                   INSTALLED PRINTERS
+echo ==============================================================
+REM Current installed printers
+powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, PortName, IsDefault | Format-Table -AutoSize"
+echo.
+
+echo ==============================================================
+echo Press any key to close this window...
+pause >nul
