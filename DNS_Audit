@@ -1,0 +1,92 @@
+# This script audits targeted OU's for DNS settings. This will report successful scans, machinse that are offline, and machines reporting an error when trying to scan.
+
+------------
+# Define OUs
+$TargetOUs = @(
+    "OU=orgunit,DC=domain,DC=com",
+    "OU=orgunit2,DC=domain,DC=com",
+    "OU=orgunit3,DC=domain,DC=com",
+    
+)
+
+$PrimaryDNS   = "0.0.0.0" # Replace with primary DNS
+$SecondaryDNS = "0.0.0.0" # Repalce with secondary DNS
+$CsvPath      = "C:\path\to\DNS_Audit_Report.csv"
+
+$AllComputers = @()
+
+# Gather computers from listed OUs
+Write-Host "Fetching computers from AD OUs..." -ForegroundColor Cyan
+foreach ($OU in $TargetOUs) {
+    try {
+        # The Filter ensures we only grab enabled computers to avoid scanning stale dead objects
+        $ComputersInOU = Get-ADComputer -SearchBase $OU -Filter 'Enabled -eq $true' | Select-Object -ExpandProperty Name
+        $AllComputers += $ComputersInOU
+        Write-Host " -> Found $($ComputersInOU.Count) active servers in $OU" -ForegroundColor Gray
+    }
+    catch {
+        Write-Host " -> Error reading $OU. Check the spelling of the Distinguished Name." -ForegroundColor Red
+    }
+}
+
+$Total = $AllComputers.Count
+Write-Host "----------------------------------------"
+Write-Host "Found $Total total active servers. Starting checks..." -ForegroundColor Cyan
+Write-Host "----------------------------------------"
+
+$Report = @()
+$Counter = 1
+
+foreach ($Computer in $AllComputers) {
+    Write-Host "[$Counter / $Total] Checking $Computer... " -NoNewline
+    
+    if (Test-Connection -ComputerName $Computer -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+        try {
+            # Using Get-WmiObject to force DCOM and bypass WinRM blocks
+            $Adapters = Get-WmiObject -ComputerName $Computer -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled = 'True'" -ErrorAction Stop
+            
+            foreach ($Adapter in $Adapters) {
+                $CurrentDNS = $Adapter.DNSServerSearchOrder
+                $IsCorrect  = $false
+
+                if ($CurrentDNS -ne $null -and $CurrentDNS.Count -ge 2) {
+                    if ($CurrentDNS[0] -eq $PrimaryDNS -and $CurrentDNS[1] -eq $SecondaryDNS) {
+                        $IsCorrect = $true
+                    }
+                }
+
+                $Report += [PSCustomObject]@{
+                    ComputerName = $Computer
+                    Status       = "Online"
+                    DNS_Correct  = $IsCorrect
+                    Actual_DNS   = ($CurrentDNS -join ", ")
+                }
+            }
+            Write-Host "Online & Scanned" -ForegroundColor Green
+        }
+        catch {
+            $Report += [PSCustomObject]@{
+                ComputerName = $Computer
+                Status       = "WMI Access Denied"
+                DNS_Correct  = $false
+                Actual_DNS   = "N/A"
+            }
+            Write-Host "WMI Access Denied" -ForegroundColor Red
+        }
+    }
+    else {
+        $Report += [PSCustomObject]@{
+            ComputerName = $Computer
+            Status       = "Offline"
+            DNS_Correct  = $false
+            Actual_DNS   = "N/A"
+        }
+        Write-Host "Offline (Skipped)" -ForegroundColor DarkGray
+    }
+    
+    $Counter++
+}
+
+Write-Host "`nServer Scan Complete!" -ForegroundColor Cyan
+$Report | Export-Csv -Path $CsvPath -NoTypeInformation
+Write-Host "Export successful and ready for review!" -ForegroundColor Green
