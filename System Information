@@ -1,3 +1,5 @@
+REM Displays system information, logged on user, network info, printers
+
 @echo off
 color 0A
 title My System Information
