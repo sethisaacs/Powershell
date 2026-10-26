@@ -1,0 +1,46 @@
+# Define the target servers & clients
+$Servers = @(
+    "Server1",
+    "Server2",
+    "Client1",
+    "Client2"
+)
+
+# Define the new DNS
+$NewDnsServers = @("0.0.0.0", "0.0.0.0")
+
+# Execute the update for defined servers & clients concurrently
+Invoke-Command -ComputerName $Servers -ScriptBlock {
+    param([string[]]$DnsServers)
+    
+    $Computer = $env:COMPUTERNAME
+    Write-Host "Starting DNS update for $Computer..." -ForegroundColor Cyan
+
+    try {
+        # Find all active IPv4 interfaces (excluding Loopback)
+        $ActiveInterfaces = Get-NetIPAddress -AddressFamily IPv4 | 
+                            Where-Object { $_.InterfaceAlias -notmatch "Loopback" } | 
+                            Select-Object -ExpandProperty InterfaceIndex -Unique
+
+        foreach ($Interface in $ActiveInterfaces) {
+            # Apply the new DNS addresses
+            Set-DnsClientServerAddress -InterfaceIndex $Interface -ServerAddresses $DnsServers
+            
+            # Flush the DNS cache to ensure old records are purged
+            Clear-DnsClientCache
+            
+            Write-Host "Successfully updated DNS on interface index $Interface for $Computer." -ForegroundColor Green
+        }
+
+        # Validation: Retrieve and output the applied configuration
+        Write-Host "Current DNS Configuration for ${Computer}:" -ForegroundColor Yellow
+        Get-DnsClientServerAddress -AddressFamily IPv4 | 
+            Where-Object { $_.ServerAddresses -ne $null } | 
+            Select-Object InterfaceAlias, @{Name="ServerAddresses";Expression={$_.ServerAddresses -join ", "}} | 
+            Format-Table -AutoSize
+
+    } catch {
+        Write-Error "Failed to update DNS on $Computer. Error: $_"
+    }
+
+} -ArgumentList (,$NewDnsServers)
